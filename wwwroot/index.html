@@ -1,200 +1,80 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>SignalR Video Chat</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-
-        video {
-            width: 45%;
-            border: 2px solid #333;
-            border-radius: 10px;
-            margin: 10px;
-        }
-
-        input,
-        button {
-            padding: 10px;
-            margin: 5px;
-        }
-
-        #status {
-            margin: 10px;
-            color: green;
-            font-weight: bold;
-        }
-    </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f6f7f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Direct">
+    <title>Direct | Private Calls</title>
+    <link rel="icon" type="image/png" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <script src="/js/theme.js"></script>
+    <link rel="stylesheet" href="/css/site.css">
+    <script defer src="/lib/signalr/signalr.min.js"></script>
+    <script defer src="/lib/lucide/lucide.min.js"></script>
+    <script defer src="/js/call.js"></script>
+    <script defer src="/js/pwa.js"></script>
 </head>
-
 <body>
-
-    <h2>SignalR Video Chat</h2>
-
-    <input id="roomId" value="demo-room" />
-    <button id="joinBtn">Join Room</button>
-
-    <div id="status">Not Connected</div>
-
-    <video id="localVideo" autoplay muted playsinline></video>
-    <video id="remoteVideo" autoplay playsinline></video>
-
-    <br>
-
-    <button id="startCall">Start Call</button>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
-
-    <script>
-
-        let peerConnection;
-        let localStream;
-        let roomId = "";
-
-        const localVideo = document.getElementById("localVideo");
-        const remoteVideo = document.getElementById("remoteVideo");
-        const status = document.getElementById("status");
-
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/videohub")
-            .withAutomaticReconnect()
-            .build();
-
-        const configuration = {
-            iceServers: [
-                { urls: "stun:stun.l.google.com:19302" }
-            ]
-        };
-
-        async function initializeRtc() {
-
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true
-            });
-
-            localVideo.srcObject = localStream;
-
-            peerConnection = new RTCPeerConnection(configuration);
-
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            peerConnection.ontrack = event => {
-                remoteVideo.srcObject = event.streams[0];
-            };
-
-            peerConnection.onicecandidate = async event => {
-                if (event.candidate) {
-
-                    await connection.invoke(
-                        "SendIceCandidate",
-                        roomId,
-                        JSON.stringify(event.candidate)
-                    );
-                }
-            };
-        }
-
-        connection.on("ReceiveOffer", async offer => {
-
-            console.log("Offer received");
-
-            await peerConnection.setRemoteDescription(
-                new RTCSessionDescription(JSON.parse(offer))
-            );
-
-            const answer = await peerConnection.createAnswer();
-
-            await peerConnection.setLocalDescription(answer);
-
-            await connection.invoke(
-                "SendAnswer",
-                roomId,
-                JSON.stringify(answer)
-            );
-        });
-
-        connection.on("ReceiveAnswer", async answer => {
-
-            console.log("Answer received");
-
-            await peerConnection.setRemoteDescription(
-                new RTCSessionDescription(JSON.parse(answer))
-            );
-        });
-
-        connection.on("ReceiveIceCandidate", async candidate => {
-
-            console.log("ICE candidate received");
-
-            await peerConnection.addIceCandidate(
-                new RTCIceCandidate(JSON.parse(candidate))
-            );
-        });
-
-        document.getElementById("joinBtn")
-            .addEventListener("click", async () => {
-
-                try {
-
-                    roomId =
-                        document.getElementById("roomId").value;
-
-                    await connection.start();
-
-                    await connection.invoke(
-                        "JoinRoom",
-                        roomId
-                    );
-
-                    await initializeRtc();
-
-                    status.innerText =
-                        "Connected to room: " + roomId;
-
-                    console.log("Joined room");
-
-                } catch (err) {
-
-                    console.error(err);
-
-                    status.innerText =
-                        "Connection failed";
-                }
-            });
-
-        document.getElementById("startCall")
-            .addEventListener("click", async () => {
-
-                try {
-
-                    const offer =
-                        await peerConnection.createOffer();
-
-                    await peerConnection
-                        .setLocalDescription(offer);
-
-                    await connection.invoke(
-                        "SendOffer",
-                        roomId,
-                        JSON.stringify(offer)
-                    );
-
-                    console.log("Offer sent");
-
-                } catch (err) {
-
-                    console.error(err);
-                }
-            });
-
-    </script>
-
+    <header class="topbar">
+        <a class="brand" href="/" aria-label="Direct home"><img src="/icons/icon-192.png" width="36" height="36" alt=""><span>Direct<span class="brand-dot">.</span></span></a>
+        <div class="top-actions">
+            <span id="networkStatus" class="connection-label" role="status">Connecting</span>
+            <button id="installBtn" class="secondary" hidden><i data-lucide="download"></i><span>Install</span></button>
+            <label class="theme-picker"><i data-lucide="sun-moon" aria-hidden="true"></i><span class="sr-only">Appearance</span><select id="themeSelect" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+        </div>
+    </header>
+    <main class="workspace">
+        <aside class="session-panel" aria-labelledby="sessionHeading">
+            <div class="section-heading"><span class="eyebrow">YOUR SPACE</span><span class="small-mark">01 / 02</span></div>
+            <h1 id="sessionHeading">A little closer.</h1>
+            <div id="sessionControls" class="session-controls">
+                <button id="createBtn" class="primary wide" disabled><i data-lucide="plus"></i>Create invitation</button>
+                <div class="divider"><span>or</span></div>
+                <form id="joinForm">
+                    <label for="inviteInput">Invitation link</label>
+                    <input id="inviteInput" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength="2048" placeholder="Paste invitation link">
+                    <button id="joinBtn" class="secondary wide" type="submit" disabled><i data-lucide="arrow-up-right"></i>Join room</button>
+                </form>
+            </div>
+            <section id="invitationPanel" hidden aria-label="Your invitation">
+                <label for="shareLink">Private invitation</label>
+                <input id="shareLink" type="text" readonly autocomplete="off" aria-label="Private invitation link">
+                <div class="share-actions"><button id="copyBtn" class="secondary"><i data-lucide="copy"></i>Copy</button><button id="shareBtn" class="secondary" hidden><i data-lucide="share-2"></i>Share</button></div>
+            </section>
+            <div class="room-summary"><i data-lucide="users-round"></i><span id="roomLabel">No room joined</span><button id="leaveBtn" class="icon-button" title="Leave room" aria-label="Leave room" hidden><i data-lucide="log-out"></i></button></div>
+            <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+            <button id="audioRetryBtn" class="secondary wide" hidden><i data-lucide="phone"></i>Retry audio only</button>
+            <div class="session-footer"><i data-lucide="lock-keyhole"></i><span>Private session</span><span class="session-count">2 people max</span></div>
+        </aside>
+        <section class="call-workspace" aria-label="Call">
+            <div class="call-heading"><div><span class="eyebrow">THE CONVERSATION</span><h2 id="callStatus" role="status">No active call</h2></div><span id="duration" class="duration" aria-label="Call duration">00:00</span></div>
+            <div class="media-grid">
+                <section class="media-region remote-region" aria-label="Remote participant">
+                    <video id="remoteVideo" autoplay playsinline></video>
+                    <div id="remoteEmpty" class="media-empty"><div class="avatar"><i data-lucide="user-round"></i></div><span id="remoteLabel">No one here yet</span></div>
+                    <span class="media-caption"><span class="status-dot"></span>Guest</span>
+                    <button id="playBtn" class="secondary playback" hidden><i data-lucide="play"></i>Play audio &amp; video</button>
+                </section>
+                <section class="media-region local-region" aria-label="Your preview">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div id="localEmpty" class="media-empty"><div class="avatar small-avatar"><i data-lucide="user-round"></i></div><span id="localLabel">Camera off</span></div>
+                    <span class="media-caption">You</span>
+                    <span id="mutedBadge" class="muted-badge" hidden><i data-lucide="mic-off"></i><span class="sr-only">Microphone muted</span></span>
+                </section>
+            </div>
+            <div class="call-toolbar">
+                <fieldset id="modeControl" class="segmented"><legend class="sr-only">Call mode</legend><label><input type="radio" name="mode" value="video" checked><span><i data-lucide="video"></i>Video</span></label><label><input type="radio" name="mode" value="audio"><span><i data-lucide="phone"></i>Audio</span></label></fieldset>
+                <div class="device-controls"><button id="muteBtn" class="icon-button" title="Mute microphone" aria-label="Mute microphone" aria-pressed="false" disabled><i data-lucide="mic"></i></button><button id="cameraBtn" class="icon-button" title="Turn camera off" aria-label="Turn camera off" aria-pressed="false" disabled><i data-lucide="video"></i></button></div>
+                <button id="callBtn" class="primary" disabled><i data-lucide="phone"></i><span>Call</span></button>
+                <button id="endBtn" class="danger" hidden><i data-lucide="phone-off"></i><span id="endLabel">End call</span></button>
+            </div>
+            <footer class="call-footer"><span><i data-lucide="shield-check"></i><span id="transportStatus">Not connected</span></span><span id="peerStatus">Waiting for a session</span></footer>
+        </section>
+    </main>
+    <div class="update-bar" id="updatePanel" hidden><span>Update available</span><button id="updateBtn" class="secondary"><i data-lucide="refresh-cw"></i>Update</button></div>
+    <dialog id="incomingDialog" aria-labelledby="incomingTitle"><div class="dialog-icon"><i data-lucide="phone-incoming"></i></div><span class="eyebrow">INCOMING CALL</span><h2 id="incomingTitle">Guest is calling</h2><p id="incomingMode">Video call</p><div class="dialog-actions"><button id="declineBtn" class="danger"><i data-lucide="phone-off"></i>Decline</button><button id="acceptBtn" class="primary"><i data-lucide="phone"></i>Accept</button></div></dialog>
 </body>
-
 </html>
