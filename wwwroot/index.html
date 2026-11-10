@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>SignalR Video Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        video {
+            width: 45%;
+            border: 2px solid #333;
+            border-radius: 10px;
+            margin: 10px;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            margin: 5px;
+        }
+
+        #status {
+            margin: 10px;
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>SignalR Video Chat</h2>
+
+    <input id="roomId" value="demo-room" />
+    <button id="joinBtn">Join Room</button>
+
+    <div id="status">Not Connected</div>
+
+    <video id="localVideo" autoplay muted playsinline></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+
+    <br>
+
+    <button id="startCall">Start Call</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+
+    <script>
+
+        let peerConnection;
+        let localStream;
+        let roomId = "";
+
+        const localVideo = document.getElementById("localVideo");
+        const remoteVideo = document.getElementById("remoteVideo");
+        const status = document.getElementById("status");
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/videohub")
+            .withAutomaticReconnect()
+            .build();
+
+        const configuration = {
+            iceServers: [
+                { urls: "stun:stun.l.google.com:19302" }
+            ]
+        };
+
+        async function initializeRtc() {
+
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            });
+
+            localVideo.srcObject = localStream;
+
+            peerConnection = new RTCPeerConnection(configuration);
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.ontrack = event => {
+                remoteVideo.srcObject = event.streams[0];
+            };
+
+            peerConnection.onicecandidate = async event => {
+                if (event.candidate) {
+
+                    await connection.invoke(
+                        "SendIceCandidate",
+                        roomId,
+                        JSON.stringify(event.candidate)
+                    );
+                }
+            };
+        }
+
+        connection.on("ReceiveOffer", async offer => {
+
+            console.log("Offer received");
+
+            await peerConnection.setRemoteDescription(
+                new RTCSessionDescription(JSON.parse(offer))
+            );
+
+            const answer = await peerConnection.createAnswer();
+
+            await peerConnection.setLocalDescription(answer);
+
+            await connection.invoke(
+                "SendAnswer",
+                roomId,
+                JSON.stringify(answer)
+            );
+        });
+
+        connection.on("ReceiveAnswer", async answer => {
+
+            console.log("Answer received");
+
+            await peerConnection.setRemoteDescription(
+                new RTCSessionDescription(JSON.parse(answer))
+            );
+        });
+
+        connection.on("ReceiveIceCandidate", async candidate => {
+
+            console.log("ICE candidate received");
+
+            await peerConnection.addIceCandidate(
+                new RTCIceCandidate(JSON.parse(candidate))
+            );
+        });
+
+        document.getElementById("joinBtn")
+            .addEventListener("click", async () => {
+
+                try {
+
+                    roomId =
+                        document.getElementById("roomId").value;
+
+                    await connection.start();
+
+                    await connection.invoke(
+                        "JoinRoom",
+                        roomId
+                    );
+
+                    await initializeRtc();
+
+                    status.innerText =
+                        "Connected to room: " + roomId;
+
+                    console.log("Joined room");
+
+                } catch (err) {
+
+                    console.error(err);
+
+                    status.innerText =
+                        "Connection failed";
+                }
+            });
+
+        document.getElementById("startCall")
+            .addEventListener("click", async () => {
+
+                try {
+
+                    const offer =
+                        await peerConnection.createOffer();
+
+                    await peerConnection
+                        .setLocalDescription(offer);
+
+                    await connection.invoke(
+                        "SendOffer",
+                        roomId,
+                        JSON.stringify(offer)
+                    );
+
+                    console.log("Offer sent");
+
+                } catch (err) {
+
+                    console.error(err);
+                }
+            });
+
+    </script>
+
+</body>
+
+</html>
